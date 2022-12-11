@@ -49,7 +49,12 @@ function createPrompt(input: string): string {
   return prompt
 }
 
-function logResponse(eventId: number, text: string) {
+function logResponse(success: boolean, eventId: number, text: string) {
+  if (!success) {
+    console.log(`    Failed to respond to event ${eventId}`);
+    return
+  }
+
   if (text.length > 100) {
     text = text.substring(0, 100) + '...'
   }
@@ -103,12 +108,12 @@ async function handleMention(eventItem) {
     )
   } catch (error) {
     console.error('    ERROR from ChatGPT', error.statusText)
-    chatResponse = 'Sorry I am over capacity, please try again later.'
+    chatResponse = 'I apologize, but I am over capacity and unable to respond at this time. Please try again later 🗿.'
   }
 
   console.log(`    Create response comment on ${resource} (${resourceId})`)
-  await GjComment.create(chatResponse, resource, resourceId)
-  logResponse(eventItem.id, chatResponse)
+  const success = await GjComment.create(chatResponse, resource, resourceId)
+  logResponse(success, eventItem.id, chatResponse)
 }
 
 async function handleCommentReply(eventItem) {
@@ -136,6 +141,11 @@ async function handleCommentReply(eventItem) {
     return
   }
 
+  if (gjConversation.reachedEnd) {
+    console.log(`    Reached end of conversation`)
+    return
+  }
+
   const commentContentDoc = JSON.parse(comment.comment_content)
   const commentText = GjComment.getTextFromContentDoc(commentContentDoc)
 
@@ -144,6 +154,11 @@ async function handleCommentReply(eventItem) {
   //     console.log(`    Comment text was not a request: ${commentText}`)
   //     return
   //   }
+
+  if (commentText.length <= 3) {
+    console.log(`    Comment text was too short: ${commentText}`)
+    return
+  }
 
   const fromUser = eventItem.from_resource_model.username
 
@@ -156,13 +171,19 @@ async function handleCommentReply(eventItem) {
 
   let chatResponse
   try {
-    const conversation = new ChatGPTConversation(chatgpt, {
-      conversationId: gjConversation.conversationId,
-      parentMessageId: gjConversation.parentMessageId
-    })
-    chatResponse = await conversation.sendMessage(prompt)
-
-    gjConversation.recordResponse(conversation.parentMessageId)
+    if (gjConversation.responses < 3) {
+      const conversation = new ChatGPTConversation(chatgpt, {
+        conversationId: gjConversation.conversationId,
+        parentMessageId: gjConversation.parentMessageId
+      })
+      chatResponse = await conversation.sendMessage(prompt)
+  
+      gjConversation.recordResponse(conversation.parentMessageId)
+    } else {
+      console.log('    Conversation max responses reached.')
+      chatResponse = 'I have reached the conversation message limit, please make a new post to keep talking with me 🗿.';
+      gjConversation.recordEndOfConversation();
+    }
   } catch (error) {
     console.error('    ERROR from ChatGPT', error.statusText)
     chatResponse =
@@ -170,6 +191,6 @@ async function handleCommentReply(eventItem) {
   }
 
   console.log(`    Create response comment on ${resource} (${resourceId})`)
-  await GjComment.create(chatResponse, resource, resourceId, comment.parent_id)
-  logResponse(eventItem.id, chatResponse)
+  const success = await GjComment.create(chatResponse, resource, resourceId, comment.parent_id)
+  logResponse(success, eventItem.id, chatResponse)
 }

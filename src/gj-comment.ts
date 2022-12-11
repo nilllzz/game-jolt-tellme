@@ -4,7 +4,7 @@ export class GjComment {
     resource: string,
     resourceId: number,
     parentId: number | null = null
-  ) {
+  ): Promise<boolean> {
     const doc = {
       version: '1.0.0',
       createdOn: Date.now(),
@@ -47,7 +47,7 @@ export class GjComment {
       }
     )
 
-    console.log('    ' + response.status)
+    return response.status === 200;
   }
 
   private static _getTextFromContentObj(obj: any) {
