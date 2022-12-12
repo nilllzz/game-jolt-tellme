@@ -10,6 +10,8 @@ dotenv.config()
 
 const chatgpt = new ChatGPTAPI({
   sessionToken: process.env.SESSION_TOKEN,
+  clearanceToken: process.env.CLEARANCE_TOKEN,
+  userAgent: process.env.USER_AGENT,
   markdown: false
 })
 await chatgpt.ensureAuth()
@@ -37,13 +39,17 @@ await grid.createNotificationsChannel(async (response) => {
 function createPrompt(input: string): string {
   let prompt = input
   if (prompt.toLowerCase().startsWith('@tellme')) {
-    prompt = 'Tell me ' + input.substring('@tellme'.length)
+    if (Math.random() < 0.5) {
+      prompt = 'Tell me ' + input.substring('@tellme'.length)
+    } else {
+      prompt = 'Write about ' + input.substring('@tellme'.length)
+    }
   }
   prompt = prompt.replaceAll(/[^a-zA-Z0-9 ,_+\-\.!?:;]/g, '')
   if (!prompt.match(/[\.,;:!? ]$/g)) {
     prompt = prompt + ','
   }
-  prompt += ' respond in one or two sentences.'
+  prompt += ' respond with a few short sentences.'
   prompt = prompt.replaceAll('  ', ' ')
 
   return prompt
@@ -51,7 +57,7 @@ function createPrompt(input: string): string {
 
 function logResponse(success: boolean, eventId: number, text: string) {
   if (!success) {
-    console.log(`    Failed to respond to event ${eventId}`);
+    console.log(`    Failed to respond to event ${eventId}`)
     return
   }
 
@@ -62,6 +68,12 @@ function logResponse(success: boolean, eventId: number, text: string) {
 }
 
 function isTextPrompt(text: string) {
+  if (
+    text.replaceAll(/[^a-zA-Z0-9 ,_+\-\.!?:;]/g, '').length <
+    '@tellme '.length + 3
+  ) {
+    return false
+  }
   return text.toLowerCase().replace('\n', ' ').startsWith('@tellme ')
 }
 
@@ -108,7 +120,8 @@ async function handleMention(eventItem) {
     )
   } catch (error) {
     console.error('    ERROR from ChatGPT', error.statusText)
-    chatResponse = 'I apologize, but I am over capacity and unable to respond at this time. Please try again later 🗿.'
+    chatResponse =
+      'I apologize, but I am over capacity and unable to respond at this time. Please try again later 🗿.'
   }
 
   console.log(`    Create response comment on ${resource} (${resourceId})`)
@@ -177,12 +190,13 @@ async function handleCommentReply(eventItem) {
         parentMessageId: gjConversation.parentMessageId
       })
       chatResponse = await conversation.sendMessage(prompt)
-  
+
       gjConversation.recordResponse(conversation.parentMessageId)
     } else {
       console.log('    Conversation max responses reached.')
-      chatResponse = 'I have reached the conversation message limit, please make a new post to keep talking with me 🗿.';
-      gjConversation.recordEndOfConversation();
+      chatResponse =
+        'I have reached the conversation message limit, please make a new post to keep talking with me 🗿.'
+      gjConversation.recordEndOfConversation()
     }
   } catch (error) {
     console.error('    ERROR from ChatGPT', error.statusText)
@@ -191,6 +205,11 @@ async function handleCommentReply(eventItem) {
   }
 
   console.log(`    Create response comment on ${resource} (${resourceId})`)
-  const success = await GjComment.create(chatResponse, resource, resourceId, comment.parent_id)
+  const success = await GjComment.create(
+    chatResponse,
+    resource,
+    resourceId,
+    comment.parent_id
+  )
   logResponse(success, eventItem.id, chatResponse)
 }
